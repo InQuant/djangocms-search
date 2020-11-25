@@ -1,0 +1,45 @@
+{% load static sekizai_tags i18n %}
+<div>
+    <cng-search-result
+      search-str="{{ request.GET.search }}"
+      search-api="{% url 'titledocument-list' %}"
+    >
+    </cng-search-result>
+</div>
+
+<script id="cms_search/search-result.html" type="text/ng-template">
+  <span class="c-search-result-form">
+    <div class="d-flex py-3">
+      <input id="cms-search-result-input" class="" placeholder="Suchwort" type="text" ng-model="$ctrl.searchStr"
+             ng-keypress="$ctrl.inputKeyPressed($event)">
+      <a class="btn btn-primary ml-2" href ng-click="$ctrl.fetchPage()"><i class="fas fa-search"></i></a>
+    </div>
+
+    {% verbatim %}
+    <div class="c-search-result" ng-repeat="item in $ctrl.items">
+      <a ng-href="{{ item.url }}"><h3>{{ item.title }}</h3></a>
+      <small class="text-sm text-muted">{{ item.pub_date }}</small>
+      <div>{{ item.text }}&nbsp;...</div>
+      <hr>
+    </div>
+    <div ng-if="$ctrl.items.length==0" class="c-search-result">
+      <div></div>
+    </div>
+    <div ng-if="$ctrl.pager.next || $ctrl.pager.previous" class="d-flex justify-content-center pt-3 pb-5">
+      <a ng-disable="!$ctrl.pager.previous" class="" href ng-click="$ctrl.previousPage()">
+        <i class="fas fa-chevron-left"></i></a>
+      <span class="mx-2">{{ $ctrl.pager.currentPage }} / {{ $ctrl.pager.totalPages }}</span>
+      <a ng-disable="!$ctrl.pager.next" class="" href ng-click="$ctrl.nextPage()"><i class="fas fa-chevron-right"></i></a>
+    </div>
+    {% endverbatim %}
+
+    <div ng-if="!$ctrl.items || !$ctrl.items.length" class="c-search-result">
+      <p>{% trans "No results found." %}</p>
+      <ul>
+        <li>{% trans "Please check your spelling" %}</li>
+        <li>{% trans "Or use a more general search term" %}</li>
+      </u>
+    </div>
+
+  </span>
+</script>
