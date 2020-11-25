@@ -2,7 +2,7 @@ from cms_search import __version__
 from setuptools import setup
 
 setup(
-    name='django-cookie-alert',
+    name='djangocms-search',
     version=__version__,
     author='InQuant GmbH',
     author_email='info@inquant.de',
