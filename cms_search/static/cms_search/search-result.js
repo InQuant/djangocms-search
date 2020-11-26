@@ -6,27 +6,35 @@ Vue.component('cms-search-result', {
             items: [],
         }
     },
-    created: function() {
+    mounted: function() {
         this.fetchPage();
     },
     methods: {
         fetchPage: function(page=1) {
             page = parseInt(page);
             var params = {page:page, search:this.searchStr};
+            var ctrl = this;
 
-            axios.get(this.searchApi, params).then(function(response) {
-                this.pager.previous = response.data.previous;
-                this.pager.next = response.data.next;
-                this.pager.currentPage = page;
-                this.pager.totalHits = response.data.count;
-                // FIXME: instead of 10 -> hitsPerPage from api
-                this.pager.totalPages = Math.ceil(response.data.count / 10);
-                this.items = response.data.results;
+            axios.get(ctrl.searchApi, params).then(function(response) {
+                ctrl.pager.previous = response.data.previous;
+                ctrl.pager.next = response.data.next;
+                ctrl.pager.currentPage = page;
+                ctrl.pager.totalHits = response.data.count;
+                if (response.data.next)
+                    ctrl.pager.totalPages = Math.ceil(response.data.count / response.data.results.length);
+                else
+                    ctrl.pager.totalPages = page
+                ctrl.items = response.data.results;
 
-                // update url params
-                location.search = new URLSearchParams(params).toString();
+                // update url query params
+                if (history.pushState) {
+                    var newurl = window.location.pathname + '?' + new URLSearchParams(params).toString();
+                    window.history.pushState({ path:newurl }, '', newurl);
+                }
+
             }).catch(function(error) {
-                console.log(error);
+                console.error(error);
+                console.log(params);
             })
         },
 
