@@ -15,7 +15,7 @@ Vue.component('cms-search-result', {
             var params = {page:page, search:this.searchStr};
             var ctrl = this;
 
-            axios.get(ctrl.searchApi, params).then(function(response) {
+            axios.get(ctrl.searchApi, {params}).then(function(response) {
                 ctrl.pager.previous = response.data.previous;
                 ctrl.pager.next = response.data.next;
                 ctrl.pager.currentPage = page;
