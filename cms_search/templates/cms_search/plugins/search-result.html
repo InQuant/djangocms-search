@@ -1,39 +1,45 @@
 {% load static sekizai_tags i18n %}
+
+{% addtoblock "js" %}<script src="{% static 'node_modules/axios/dist/axios.min.js' %}" type="text/javascript"></script>{% endaddtoblock %}
+{% addtoblock "js" %}<script src="{% static 'cms_search/search-result.js' %}" type="text/javascript"></script>{% endaddtoblock %}
+
 <div>
-    <cng-search-result
+    <cms-search-result
       search-str="{{ request.GET.search }}"
       search-api="{% url 'titledocument-list' %}"
     >
-    </cng-search-result>
+    </cms-search-result>
 </div>
 
-<script id="cms_search/search-result.html" type="text/ng-template">
-  <span class="c-search-result-form">
+<script id="search-result" type="text/x-template">
+  <div class="c-search-result-form">
     <div class="d-flex py-3">
-      <input id="cms-search-result-input" class="" placeholder="Suchwort" type="text" ng-model="$ctrl.searchStr"
-             ng-keypress="$ctrl.inputKeyPressed($event)">
-      <a class="btn btn-primary ml-2" href ng-click="$ctrl.fetchPage()"><i class="fas fa-search"></i></a>
+      <b-form-input id="cms-search-result-input" placeholder="Suchwort" type="text" v-model="searchStr"
+             v-on:keyup.enter="fetchPage()"></b-form-input>
+      <b-button variant="primary" class="ml-2" @click="fetchPage()"><b-icon icon="search"></b-icon></b-button>
     </div>
 
     {% verbatim %}
-    <div class="c-search-result" ng-repeat="item in $ctrl.items">
-      <a ng-href="{{ item.url }}"><h3>{{ item.title }}</h3></a>
+    <div class="c-search-result" v-for="item in items">
+      <a :href="item.url"><h3>{{ item.title }}</h3></a>
       <small class="text-sm text-muted">{{ item.pub_date }}</small>
       <div>{{ item.text }}&nbsp;...</div>
       <hr>
     </div>
-    <div ng-if="$ctrl.items.length==0" class="c-search-result">
+    <div v-if="items.length==0" class="c-search-result">
       <div></div>
     </div>
-    <div ng-if="$ctrl.pager.next || $ctrl.pager.previous" class="d-flex justify-content-center pt-3 pb-5">
-      <a ng-disable="!$ctrl.pager.previous" class="" href ng-click="$ctrl.previousPage()">
-        <i class="fas fa-chevron-left"></i></a>
-      <span class="mx-2">{{ $ctrl.pager.currentPage }} / {{ $ctrl.pager.totalPages }}</span>
-      <a ng-disable="!$ctrl.pager.next" class="" href ng-click="$ctrl.nextPage()"><i class="fas fa-chevron-right"></i></a>
+
+    <div v-if="pager.next || pager.previous" class="d-flex justify-content-center pt-3 pb-5">
+      <a :class="pager.previous ? '' : 'disable'" href="#" @click="previousPage()">
+        <b-icon icon="chevron-left"></b-icon></a>
+      <span class="mx-2">{{ pager.currentPage }} / {{ pager.totalPages }}</span>
+      <a :class="pager.next ? '' : 'disable'" href="#" @click="nextPage()">
+        <b-icon icon="chevron-right"></b-icon></a>
     </div>
     {% endverbatim %}
 
-    <div ng-if="!$ctrl.items || !$ctrl.items.length" class="c-search-result">
+    <div v-if="!items || !items.length" class="c-search-result">
       <p>{% trans "No results found." %}</p>
       <ul>
         <li>{% trans "Please check your spelling" %}</li>
@@ -41,5 +47,5 @@
       </u>
     </div>
 
-  </span>
+  </div>
 </script>
