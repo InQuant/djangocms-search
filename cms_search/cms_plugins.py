@@ -22,3 +22,4 @@ class SearchResultListPlugin(StylePluginMixin, PlusPluginBase):
     allow_children = False
     form = SearchResultListForm
     render_template = 'cms_search/plugins/search-result.html'
+    cache = False
