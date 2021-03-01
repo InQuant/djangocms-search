@@ -12,7 +12,8 @@ from django_elasticsearch_dsl_drf.filter_backends import (
 from django_elasticsearch_dsl_drf.viewsets import BaseDocumentViewSet
 from django_elasticsearch_dsl_drf.pagination import PageNumberPagination
 
-from .documents import TitleDocument, TitleDocumentSerializer
+from .index_register import DOCUMENT_CLASS as TitleDocument
+from .serializers import TitleDocumentSerializer
 
 
 class TitleDocumentView(BaseDocumentViewSet):

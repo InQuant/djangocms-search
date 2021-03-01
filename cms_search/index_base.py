@@ -1,20 +1,13 @@
 # -*- coding: utf-8 -*-
-from time import strftime
-from datetime import datetime
-
 from django.db.models import Q
 from django.dispatch import receiver
 
 from cms.models import CMSPlugin, Title, Page
 from cms.signals import post_publish, post_unpublish
 
-from rest_framework import serializers
-
 from elasticsearch_dsl import analyzer, analysis
 from django_elasticsearch_dsl import Document, fields
 from django_elasticsearch_dsl.registries import registry
-
-from django_elasticsearch_dsl_drf.serializers import DocumentSerializer
 
 from .conf import settings
 from .helpers import get_plugin_index_data, get_request
@@ -46,8 +39,7 @@ html_strip = analyzer(
 )
 
 
-@registry.register_document
-class TitleDocument(Document):
+class TitleDocumentBase(Document):
 
     text = fields.TextField(
         fielddata=True,
@@ -104,8 +96,14 @@ class TitleDocument(Document):
 
         text_tokens = [self.prepare_title(obj)]
         for base_plugin in plugins:
-            plugin_text_content = self.get_plugin_search_text(base_plugin, request)
-            text_tokens.append(plugin_text_content)
+            if self.shall_be_indexed(base_plugin):
+                try:
+                    plugin_text_content = self.get_plugin_search_text(base_plugin, request)
+                    text_tokens.append(plugin_text_content)
+                except Exception as e:
+                    logger.error(
+                        f'Cannot render plugin ({base_plugin}, {base_plugin.id}) for index: {e}')
+                    continue
 
         page_meta_description = current_page.get_meta_description(fallback=False)
 
@@ -118,6 +116,12 @@ class TitleDocument(Document):
 
         logger.debug(str(text_tokens))
         return clean_join(' ', text_tokens)
+
+    def shall_be_indexed(self, plugin):
+        """ called before a plugin will be indexed.
+            if one returns False plugin will be skipped.
+        """
+        return True
 
     def get_request_instance(self, obj):
         return get_request(obj.language)
@@ -225,10 +229,12 @@ class TitleDocument(Document):
 
 @receiver(post_publish, sender=Page)
 def on_page_post_publish(sender, **kwargs):
+    from .index_register import DOCUMENT_CLASS as TitleDocument
     try:
-        page = kwargs['instance']
+        page = kwargs['instance'].get_public_object()
         logger.info('** on_post_publish %s' % str(page))
-        TitleDocument().update(page.get_title_obj(), refresh=True, action='index')
+        title = page.title_set.get(language=kwargs.get('language'))
+        TitleDocument().update(title, refresh=True, action='index')
     except Exception as e:
         logger.error('** index update failed for page: %s, %s' % (str(page), str(e)))
         logger.error('on_page_post_publish Error - Elasticsearch running?')
@@ -237,43 +243,18 @@ def on_page_post_publish(sender, **kwargs):
 
 @receiver(post_unpublish, sender=Page)
 def on_title_post_unpublish(sender, **kwargs):
+    from .index_register import DOCUMENT_CLASS as TitleDocument
     try:
-        page = kwargs['instance']
+        page = kwargs['instance'].get_public_object()
         logger.info('** on_post_unpublish %s' % str(page))
-        TitleDocument().update(page.get_title_obj(), refresh=True, action='delete')
+        title = page.title_set.get(language=kwargs.get('language'))
+        TitleDocument().update(title, refresh=True, action='delete')
     except Exception as e:
         logger.error('** index removal failed for page: %s, %s' % (str(page), str(e)))
         logger.error('on_title_post_unpublish Error - Elasticsearch running?')
         logger.exception(e)
 
 
-class TitleDocumentSerializer(DocumentSerializer):
-    """Serializer for the Title document."""
-    text = serializers.SerializerMethodField()
-    pub_date = serializers.SerializerMethodField()
-
-    def get_text(self, obj):
-        return obj.text[:256]
-
-    def get_pub_date(self, obj):
-        # TODO: FIXME - why is this a fucking string in obj type hit?
-        dt = datetime.strptime(obj.pub_date[:26], '%Y-%m-%dT%H:%M:%S.%f')
-        return strftime('%Y-%m-%d %H:%M:%S', dt.timetuple())
-
-    class Meta(object):
-
-        # Specify the correspondent document class
-        document = TitleDocument
-
-        # List the serializer fields. Note, that the order of the fields
-        # is preserved in the ViewSet.
-        fields = (
-            'title',
-            'slug',
-            'text',
-            'language',
-            'pub_date',
-            'login_required',
-            'site_id',
-            'url',
-        )
+@registry.register_document
+class DefaultTitleDocument(TitleDocumentBase):
+    pass
