@@ -52,6 +52,13 @@ class TitleDocumentBase(Document):
             'raw': fields.KeywordField(),
         }
     )
+    description = fields.TextField(
+        fielddata=True,
+        analyzer=html_strip,
+        fields={
+            'raw': fields.KeywordField(),
+        }
+    )
     slug = fields.TextField(
         fielddata=True,
         fields={
@@ -94,7 +101,7 @@ class TitleDocumentBase(Document):
         plugins = self.get_plugin_queryset(obj.language).filter(placeholder__in=placeholders)
         request = self.get_request_instance(obj)
 
-        text_tokens = [self.prepare_title(obj)]
+        text_tokens = [self.prepare_description(obj)]
         for base_plugin in plugins:
             if self.shall_be_indexed(base_plugin):
                 try:
@@ -105,10 +112,9 @@ class TitleDocumentBase(Document):
                         f'Cannot render plugin ({base_plugin}, {base_plugin.id}) for index: {e}')
                     continue
 
-        page_meta_description = current_page.get_meta_description(fallback=False)
-
-        if page_meta_description:
-            text_tokens.append(page_meta_description)
+        title = self.prepare_title(obj)
+        if title:
+            text_tokens.append(title)
 
         page_meta_keywords = getattr(current_page, 'get_meta_keywords', None)
         if callable(page_meta_keywords):
@@ -139,10 +145,10 @@ class TitleDocumentBase(Document):
         return obj.page.get_absolute_url(language=obj.language)
 
     def prepare_title(self, obj):
-        return obj.title
+        return obj.page.get_page_title() or obj.page.get_title() or ''
 
     def prepare_description(self, obj):
-        return obj.meta_description or None
+        return obj.page.get_meta_description(fallback=False) or ''
 
     def get_plugin_queryset(self, language):
         queryset = CMSPlugin.objects.filter(language=language)
