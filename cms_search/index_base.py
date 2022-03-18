@@ -25,19 +25,22 @@ html_strip = analyzer(
  )
 '''
 
-de_snow_filter = analysis.token_filter('de_snow', type="snowball", language='German')
-en_snow_filter = analysis.token_filter('en_snow', type="snowball", language='English')
-de_stop_filter = analysis.token_filter('de_stop', type="stop", language='German')
-en_stop_filter = analysis.token_filter('en_stop', type="stop", language='English')
-de_ngram_filter = analysis.token_filter('de_ngram', type="ngram", min_gram=4, max_gram=5, language='German')
+en_snow = analysis.token_filter('en_snow', type="snowball", language='English')
+en_stop = analysis.token_filter('en_stop', type="stop", language='English')
+de_snow = analysis.token_filter('de_snow', type="snowball", language='German')
+de_stop = analysis.token_filter('de_stop', type="stop", language='German')
+de_ngram = analysis.token_filter('de_ngram', type="ngram", min_gram=4, max_gram=4, language='German')
+de_stemmer = analysis.token_filter('de_stemmer', type="stemmer", language='German')
+
+# best so far for german seems to be a 3/3 ngram tokenizer with the configured filters.
+# Seems to be the best balance between good matches and to many hits
 html_strip = analyzer(
     'html_strip',
     type='custom',
-    tokenizer='standard',
-    filter=['lowercase', de_snow_filter, en_snow_filter, de_stop_filter, en_stop_filter, de_ngram_filter],
+    tokenizer=analysis.tokenizer('ngram', type='ngram', min_gram=3, max_gram=3),
+    filter=['lowercase', en_snow, en_stop, de_snow, de_stop, 'german_normalization'],
     char_filter=['html_strip']
 )
-
 
 class TitleDocumentBase(Document):
 
