@@ -1,12 +1,13 @@
 # -*- coding: utf-8 -*-
 from django.db.models import Q
-from django.dispatch import receiver
+from django.contrib.contenttypes.models import ContentType
 
 from cms.models import CMSPlugin, Title, Page
-from cms.signals import post_publish, post_unpublish
 
 from elasticsearch_dsl import analyzer, analysis
+
 from django_elasticsearch_dsl import Document, fields
+from django_elasticsearch_dsl_drf.compat import StringField
 from django_elasticsearch_dsl.registries import registry
 
 from .conf import settings
@@ -15,6 +16,8 @@ from .utils import clean_join
 
 import logging
 logger = logging.getLogger('cms_search')
+
+PAGE_DOCUMENT_CLS = None # to be set trough custom_page_document_register
 
 ''' ori:
 html_strip = analyzer(
@@ -41,13 +44,27 @@ html_strip = analyzer(
     filter=['lowercase', en_snow, en_stop, de_snow, de_stop, 'german_normalization'],
     char_filter=['html_strip']
 )
-
 class TitleDocumentBase(Document):
+    """
+    Use e.g. with an Book Model:
+    from django_elasticsearch_dsl.registries import registry
 
-    text = fields.TextField(
-        fielddata=True,
-        analyzer=html_strip,
-    )
+    @registry.register_document
+    BookDocument(DocumentBase):
+
+        class Django:
+            model = Book  # The model associated with this Document
+
+            # The fields of the model you want to be indexed in Elasticsearch
+            fields = [
+                'id',
+                'language',
+            ]
+
+            # Ignore auto updating of Elasticsearch when a model is saved
+            # or deleted:
+            ignore_signals = True  # see update below
+    """
     title = fields.TextField(
         fielddata=True,
         analyzer=html_strip,
@@ -55,6 +72,47 @@ class TitleDocumentBase(Document):
             'raw': fields.KeywordField(),
         }
     )
+
+    text = fields.TextField(
+        fielddata=True,
+        analyzer=html_strip,
+    )
+
+    item_type = StringField(
+        analyzer=html_strip,
+        fields={
+            'raw': StringField(analyzer='keyword'),
+        }
+    )
+
+    class Index:
+        # Name of the Elasticsearch index
+        name = ''  # set index name
+        # See Elasticsearch Indices API reference for available settings
+        settings = {'number_of_shards': 1, 'number_of_replicas': 0}
+
+    def prepare_title(self, obj):
+        return getattr(obj, 'name', '')
+
+    def prepare_text(self, obj):
+        return getattr(obj, 'content', '')
+
+    def prepare_item_type(self, obj):
+        return obj.__class__.__name__.lower()
+
+    def prepare_content_type_id(self, obj):
+        return ContentType.objects.get_for_model(obj).id
+
+    def get_model(self):
+        raise NotImplementedError('get_model must be implemented in document class.')
+
+    def update(self, thing, refresh=None, action='index', parallel=False, **kwargs):
+        logger.info('** about to update index: %s, %s' % (action, thing))
+        return super().update(thing, refresh, action, parallel, **kwargs)
+
+
+class CmsPageDocumentBase(TitleDocumentBase):
+
     description = fields.TextField(
         fielddata=True,
         analyzer=html_strip,
@@ -100,13 +158,14 @@ class TitleDocumentBase(Document):
     def prepare_text(self, obj):
         logger.debug('*** index prepare text: %s' % obj)
         current_page = obj.page
+
         placeholders = self.get_page_placeholders(current_page)
         plugins = self.get_plugin_queryset(obj.language).filter(placeholder__in=placeholders)
         request = self.get_request_instance(obj)
 
         text_tokens = [self.prepare_description(obj)]
         for base_plugin in plugins:
-            if self.shall_be_indexed(base_plugin):
+            if self.is_plugin_indexable(base_plugin):
                 try:
                     plugin_text_content = self.get_plugin_search_text(base_plugin, request)
                     text_tokens.append(plugin_text_content)
@@ -126,7 +185,13 @@ class TitleDocumentBase(Document):
         logger.debug(str(text_tokens))
         return clean_join(' ', text_tokens)
 
-    def shall_be_indexed(self, plugin):
+    def is_page_indexable(self, page):
+        """ called before a page will be indexed.
+            if one returns False plugin will be skipped.
+        """
+        return True
+
+    def is_plugin_indexable(self, plugin):
         """ called before a plugin will be indexed.
             if one returns False plugin will be skipped.
         """
@@ -229,41 +294,55 @@ class TitleDocumentBase(Document):
         """
         Return the queryset that should be indexed by this doc type.
         """
-        return Title.objects.public()
+        indexable_pages = []
+        for page in Page.objects.public().filter(login_required=False):
+            if not page_login_required(page, recursive=True):
+                indexable_pages.append(page.id)
+        return Title.objects.public().filter(page__id__in=indexable_pages)
 
     def update(self, thing, refresh=None, action='index', parallel=False, **kwargs):
         logger.info('** about to update index: %s, %s' % (action, thing))
         return super().update(thing, refresh, action, parallel, **kwargs)
 
 
-@receiver(post_publish, sender=Page)
-def on_page_post_publish(sender, **kwargs):
-    from .index_register import DOCUMENT_CLASS as TitleDocument
+def page_login_required(page, recursive=False):
+    if page.login_required:
+        return True
+    if recursive and page.parent_page:
+        return page_login_required(page.parent_page, recursive)
+    return False
+
+
+def update_index_for_page_instance(page_document_cls, instance, language):
     try:
-        page = kwargs['instance'].get_public_object()
-        logger.info('** on_post_publish %s' % str(page))
-        title = page.title_set.get(language=kwargs.get('language'))
-        TitleDocument().update(title, refresh=True, action='index')
+        page = instance.get_public_object()
+        if page_login_required(page, recursive=True):
+            return
+        logger.info('** update_index_for_page_instance %s' % str(page))
+        title = page.title_set.get(language=language)
+        page_document_cls().update(title, refresh=True, action='index')
     except Exception as e:
         logger.error('** index update failed for page: %s, %s' % (str(page), str(e)))
         logger.error('on_page_post_publish Error - Elasticsearch running?')
         logger.exception(e)
 
 
-@receiver(post_unpublish, sender=Page)
-def on_title_post_unpublish(sender, **kwargs):
-    from .index_register import DOCUMENT_CLASS as TitleDocument
+def remove_index_for_page_instance(page_document_cls, instance, language):
     try:
-        page = kwargs['instance'].get_public_object()
-        logger.info('** on_post_unpublish %s' % str(page))
-        title = page.title_set.get(language=kwargs.get('language'))
-        TitleDocument().update(title, refresh=True, action='delete')
+        page = instance.get_public_object()
+        logger.info('** remove_index_for_page_instance %s' % str(page))
+        title = page.title_set.get(language=language)
+        page_document_cls().update(title, refresh=True, action='delete')
     except Exception as e:
         logger.error('** index removal failed for page: %s, %s' % (str(page), str(e)))
         logger.error('on_title_post_unpublish Error - Elasticsearch running?')
         logger.exception(e)
 
 
-@registry.register_document
-class DefaultTitleDocument(TitleDocumentBase):
-    pass
+def custom_page_document_register(page_document_class):
+    global PAGE_DOCUMENT_CLS
+    PAGE_DOCUMENT_CLS = page_document_class
+    registry.register_document(page_document_class)
+
+def get_page_document_class():
+    return PAGE_DOCUMENT_CLS
