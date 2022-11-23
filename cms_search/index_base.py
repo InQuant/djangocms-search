@@ -30,18 +30,26 @@ html_strip = analyzer(
 
 en_snow = analysis.token_filter('en_snow', type="snowball", language='English')
 en_stop = analysis.token_filter('en_stop', type="stop", language='English')
+en_stemmer = analysis.token_filter('en_stemmer', type="stemmer", language='English')
 de_snow = analysis.token_filter('de_snow', type="snowball", language='German')
 de_stop = analysis.token_filter('de_stop', type="stop", language='German')
-de_ngram = analysis.token_filter('de_ngram', type="ngram", min_gram=4, max_gram=4, language='German')
+en_ngram = analysis.token_filter('en_ngram', type="ngram", min_gram=5, max_gram=5, language='English')
+de_ngram = analysis.token_filter('de_ngram', type="ngram", min_gram=5, max_gram=5, language='German')
 de_stemmer = analysis.token_filter('de_stemmer', type="stemmer", language='German')
+de_decompounder = analysis.token_filter('de_decompounder', type="hyphenation_decompounder",
+    word_list_path="analysis/dictionary-de.txt", hyphenation_patterns_path="analysis/de_DR.xml",
+    only_longest_match=True, min_subword_size=3)
 
 # best so far for german seems to be a 3/3 ngram tokenizer with the configured filters.
 # Seems to be the best balance between good matches and to many hits
 html_strip = analyzer(
     'html_strip',
     type='custom',
-    tokenizer=analysis.tokenizer('ngram', type='ngram', min_gram=3, max_gram=3),
-    filter=['lowercase', en_snow, en_stop, de_snow, de_stop, 'german_normalization'],
+    # tokenizer=analysis.tokenizer('ngram', type='ngram', min_gram=3, max_gram=3),
+    tokenizer='standard',
+    # filter=['lowercase', en_snow, en_stop, de_snow, de_stop, 'german_normalization', de_stemmer],
+    filter=['lowercase', de_decompounder, 'german_normalization', de_stop, en_stop, de_snow,
+       en_snow, de_stemmer, en_stemmer],
     char_filter=['html_strip']
 )
 class TitleDocumentBase(Document):
@@ -87,7 +95,7 @@ class TitleDocumentBase(Document):
 
     class Index:
         # Name of the Elasticsearch index
-        name = ''  # set index name
+        name = 'titlemodels'  # set index name
         # See Elasticsearch Indices API reference for available settings
         settings = {'number_of_shards': 1, 'number_of_replicas': 0}
 
@@ -128,7 +136,6 @@ class CmsPageDocumentBase(TitleDocumentBase):
     )
 
     pub_date = fields.DateField(store=True, index=False)
-    login_required = fields.BooleanField()
     site_id = fields.IntegerField(store=True, index=True)
     url = fields.TextField(
         store=True,
@@ -202,9 +209,6 @@ class CmsPageDocumentBase(TitleDocumentBase):
 
     def prepare_pub_date(self, obj):
         return obj.page.publication_date
-
-    def prepare_login_required(self, obj):
-        return obj.page.login_required
 
     def prepare_site_id(self, obj):
         return obj.page.node.site_id
@@ -299,10 +303,6 @@ class CmsPageDocumentBase(TitleDocumentBase):
             if not page_login_required(page, recursive=True):
                 indexable_pages.append(page.id)
         return Title.objects.public().filter(page__id__in=indexable_pages)
-
-    def update(self, thing, refresh=None, action='index', parallel=False, **kwargs):
-        logger.info('** about to update index: %s, %s' % (action, thing))
-        return super().update(thing, refresh, action, parallel, **kwargs)
 
 
 def page_login_required(page, recursive=False):

@@ -96,8 +96,10 @@ class TitleDocumentView(BaseDocumentViewSet):
 
     # Define ordering fields
     ordering_fields = {
+        '_score': '_score',
         'title': 'title',
         'pub_date': 'pub_date',
     }
+
     # Specify default ordering
-    ordering = ('_score', 'title', 'pub_date',)
+    ordering = ('-_score', 'pub_date', 'title')
