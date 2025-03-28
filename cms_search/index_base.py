@@ -2,7 +2,7 @@
 from django.db.models import Q
 from django.contrib.contenttypes.models import ContentType
 
-from cms.models import CMSPlugin, Title, Page
+from cms.models import CMSPlugin, PageContent, Page
 
 from elasticsearch_dsl import analyzer, analysis
 
@@ -150,7 +150,7 @@ class CmsPageDocumentBase(TitleDocumentBase):
                     'number_of_replicas': 0}
 
     class Django:
-        model = Title  # The model associated with this Document
+        model = PageContent  # The model associated with this Document
 
         # The fields of the model you want to be indexed in Elasticsearch
         fields = [
@@ -292,7 +292,7 @@ class CmsPageDocumentBase(TitleDocumentBase):
         return clean_join(' ', plugin_content_bits)
 
     def get_model(self):
-        return Title
+        return PageContent
 
     def get_queryset(self):
         """
@@ -302,7 +302,7 @@ class CmsPageDocumentBase(TitleDocumentBase):
         for page in Page.objects.public().filter(login_required=False):
             if not page_login_required(page, recursive=True):
                 indexable_pages.append(page.id)
-        return Title.objects.public().filter(page__id__in=indexable_pages)
+        return PageContent.objects.filter(page__id__in=indexable_pages)
 
 
 def page_login_required(page, recursive=False):

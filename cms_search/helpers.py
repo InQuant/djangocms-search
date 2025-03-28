@@ -6,16 +6,11 @@ from django.template import Engine, RequestContext
 from django.test import RequestFactory
 from django.utils.text import smart_split
 
-from cms.toolbar.toolbar import CMSToolbar
-
 from .conf import settings
 from .utils import get_field_value, strip_tags
 
 
-try:
-    from django.utils.encoding import force_unicode
-except ImportError:
-    from django.utils.encoding import force_text as force_unicode
+from django.utils.encoding import force_str
 
 
 EXCLUDED_PLUGINS = getattr(settings, 'CMS_SEARCH_EXCLUDED_PLUGINS', [])
@@ -34,7 +29,7 @@ def _render_plugin(plugin, context, renderer=None):
 
 
 def get_cleaned_bits(data):
-    decoded = force_unicode(data)
+    decoded = force_str(data)
     stripped = strip_tags(decoded)
     return smart_split(stripped)
 
@@ -103,5 +98,4 @@ def get_request(language=None):
     # Needed for plugin rendering.
     request.current_page = None
     request.user = AnonymousUser()
-    request.toolbar = CMSToolbar(request)
     return request

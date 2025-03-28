@@ -5,11 +5,11 @@ import importlib
 import re
 
 from django.db import models
-from django.utils.encoding import force_text
+from django.utils.encoding import force_str
 
 import six
 from lxml.etree import ParseError, ParserError
-from lxml.html.clean import Cleaner as LxmlCleaner
+from lxml_html_clean import Cleaner as LxmlCleaner
 
 
 def clean_join(separator, iterable):
@@ -63,7 +63,7 @@ def _strip_tags(value):
     whitespace in between replaced tags to make sure words are not erroneously
     concatenated.
     """
-    return re.sub(r'<[^>]*?>', ' ', force_text(value))
+    return re.sub(r'<[^>]*?>', ' ', force_str(value))
 
 
 def strip_tags(value):
