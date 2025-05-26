@@ -162,15 +162,15 @@ class CmsPageDocumentBase(TitleDocumentBase):
         # or deleted:
         ignore_signals = True
 
-    def prepare_text(self, obj):
-        logger.debug('*** index prepare text: %s' % obj)
-        current_page = obj.page
+    def prepare_text(self, pc:PageContent):
+        logger.debug('*** index prepare text: %s' % pc)
+        current_page = pc.page
 
-        placeholders = self.get_page_placeholders(current_page)
-        plugins = self.get_plugin_queryset(obj.language).filter(placeholder__in=placeholders)
-        request = self.get_request_instance(obj)
+        placeholders = pc.placeholders.all()
+        plugins = self.get_plugin_queryset(pc.language).filter(placeholder__in=placeholders)
+        request = self.get_request_instance(pc)
 
-        text_tokens = [self.prepare_description(obj)]
+        text_tokens = [self.prepare_description(pc)]
         for base_plugin in plugins:
             if self.is_plugin_indexable(base_plugin):
                 try:
@@ -181,7 +181,7 @@ class CmsPageDocumentBase(TitleDocumentBase):
                         f'Cannot render plugin ({base_plugin}, {base_plugin.id}) for index: {e}')
                     continue
 
-        title = self.prepare_title(obj)
+        title = self.prepare_title(pc)
         if title:
             text_tokens.append(title)
 
@@ -208,7 +208,7 @@ class CmsPageDocumentBase(TitleDocumentBase):
         return get_request(obj.language)
 
     def prepare_pub_date(self, obj):
-        return obj.page.publication_date
+        return obj.versions.filter(state='published').last().modified
 
     def prepare_site_id(self, obj):
         return obj.page.node.site_id
@@ -217,7 +217,7 @@ class CmsPageDocumentBase(TitleDocumentBase):
         return obj.page.get_absolute_url(language=obj.language)
 
     def prepare_title(self, obj):
-        return obj.page.get_page_title() or obj.page.get_title() or ''
+        return obj.title or obj.page.get_title() or ''
 
     def prepare_description(self, obj):
         return obj.page.get_meta_description(fallback=False) or ''
@@ -225,67 +225,6 @@ class CmsPageDocumentBase(TitleDocumentBase):
     def get_plugin_queryset(self, language):
         queryset = CMSPlugin.objects.filter(language=language)
         return queryset
-
-    def get_page_placeholders(self, page):
-        """
-        In the project settings set up the variable
-
-        PLACEHOLDERS_SEARCH_LIST = {
-            # '*' is mandatory if you define at least one slot rule
-            '*': {
-                'include': [ 'slot1', 'slot2', etc. ],
-                'exclude': [ 'slot3', 'slot4', etc. ],
-            }
-            'reverse_id_alpha': {
-                'include': [ 'slot1', 'slot2', etc. ],
-                'exclude': [ 'slot3', 'slot4', etc. ],
-            },
-            'reverse_id_beta': {
-                'include': [ 'slot1', 'slot2', etc. ],
-                'exclude': [ 'slot3', 'slot4', etc. ],
-            },
-            'reverse_id_only_include': {
-                'include': [ 'slot1', 'slot2', etc. ],
-            },
-            'reverse_id_only_exclude': {
-                'exclude': [ 'slot3', 'slot4', etc. ],
-            },
-            # exclude it from the placehoders search list
-            # (however better to remove at all to exclude it)
-            'reverse_id_empty': []
-            etc.
-        }
-
-        or leave it empty
-
-        PLACEHOLDERS_SEARCH_LIST = {}
-        """
-        reverse_id = page.reverse_id
-        args = []
-        kwargs = {}
-
-        placeholders_by_page = getattr(settings, 'PLACEHOLDERS_SEARCH_LIST', {})
-
-        if placeholders_by_page:
-            filter_target = None
-            excluded = []
-            slots = []
-            if '*' in placeholders_by_page:
-                filter_target = '*'
-            if reverse_id and reverse_id in placeholders_by_page:
-                filter_target = reverse_id
-            if not filter_target:
-                raise AttributeError('Leave PLACEHOLDERS_SEARCH_LIST empty or set up at least the generic handling')
-            if 'include' in placeholders_by_page[filter_target]:
-                slots = placeholders_by_page[filter_target]['include']
-            if 'exclude' in placeholders_by_page[filter_target]:
-                excluded = placeholders_by_page[filter_target]['exclude']
-            diff = set(slots) - set(excluded)
-            if diff:
-                kwargs['slot__in'] = diff
-            else:
-                args.append(~Q(slot__in=excluded))
-        return page.placeholders.filter(*args, **kwargs)
 
     def get_plugin_search_text(self, base_plugin, request):
         plugin_content_bits = get_plugin_index_data(base_plugin, request)
@@ -299,7 +238,7 @@ class CmsPageDocumentBase(TitleDocumentBase):
         Return the queryset that should be indexed by this doc type.
         """
         indexable_pages = []
-        for page in Page.objects.public().filter(login_required=False):
+        for page in Page.objects.filter(login_required=False):
             if not page_login_required(page, recursive=True):
                 indexable_pages.append(page.id)
         return PageContent.objects.filter(page__id__in=indexable_pages)
@@ -313,28 +252,26 @@ def page_login_required(page, recursive=False):
     return False
 
 
-def update_index_for_page_instance(page_document_cls, instance, language):
+def update_index_for_page_content(page_document_cls, page_content:PageContent):
     try:
-        page = instance.get_public_object()
+        page = page_content.page
         if page_login_required(page, recursive=True):
             return
-        logger.info('** update_index_for_page_instance %s' % str(page))
-        title = page.title_set.get(language=language)
-        page_document_cls().update(title, refresh=True, action='index')
+        logger.info(f'** update_index_for_page_instance {page} ({page_content})')
+        page_document_cls().update(page_content, refresh=True, action='index')
     except Exception as e:
-        logger.error('** index update failed for page: %s, %s' % (str(page), str(e)))
+        logger.error(f'** index update failed for page: {page} ({page_content}), {e}')
         logger.error('on_page_post_publish Error - Elasticsearch running?')
         logger.exception(e)
 
 
-def remove_index_for_page_instance(page_document_cls, instance, language):
+def remove_index_for_page_instance(page_document_cls, page_content:PageContent):
     try:
-        page = instance.get_public_object()
-        logger.info('** remove_index_for_page_instance %s' % str(page))
-        title = page.title_set.get(language=language)
-        page_document_cls().update(title, refresh=True, action='delete')
+        page = page_content.page
+        logger.info(f'** remove_index_for_page_instance {page}, ({page_content})')
+        page_document_cls().update(page_content, refresh=True, action='delete')
     except Exception as e:
-        logger.error('** index removal failed for page: %s, %s' % (str(page), str(e)))
+        logger.error(f'** index removal failed for page: {page}, ({page_content})')
         logger.error('on_title_post_unpublish Error - Elasticsearch running?')
         logger.exception(e)
 
