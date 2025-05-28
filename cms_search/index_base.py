@@ -35,7 +35,9 @@ de_snow = analysis.token_filter('de_snow', type="snowball", language='German')
 de_stop = analysis.token_filter('de_stop', type="stop", language='German')
 en_ngram = analysis.token_filter('en_ngram', type="ngram", min_gram=5, max_gram=5, language='English')
 de_ngram = analysis.token_filter('de_ngram', type="ngram", min_gram=5, max_gram=5, language='German')
+
 de_stemmer = analysis.token_filter('de_stemmer', type="stemmer", language='German')
+
 de_decompounder = analysis.token_filter('de_decompounder', type="hyphenation_decompounder",
     word_list_path="analysis/dictionary-de.txt", hyphenation_patterns_path="analysis/de_DR.xml",
     only_longest_match=True, min_subword_size=3)
@@ -48,8 +50,8 @@ html_strip = analyzer(
     # tokenizer=analysis.tokenizer('ngram', type='ngram', min_gram=3, max_gram=3),
     tokenizer='standard',
     # filter=['lowercase', en_snow, en_stop, de_snow, de_stop, 'german_normalization', de_stemmer],
-    filter=['lowercase', de_decompounder, 'german_normalization', de_stop, en_stop, de_snow,
-       en_snow, de_stemmer, en_stemmer],
+    # filter=['lowercase', de_decompounder, 'german_normalization', de_stop, en_stop, de_snow, en_snow, de_stemmer, en_stemmer],
+    filter=['lowercase', de_decompounder, 'german_normalization', de_stop, en_stop, de_snow, de_stemmer],
     char_filter=['html_strip']
 )
 class TitleDocumentBase(Document):
