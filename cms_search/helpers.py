@@ -6,6 +6,8 @@ from django.template import Engine, RequestContext
 from django.test import RequestFactory
 from django.utils.text import smart_split
 
+from cms.plugin_rendering import ContentRenderer
+
 from .conf import settings
 from .utils import get_field_value, strip_tags
 
@@ -16,16 +18,12 @@ from django.utils.encoding import force_str
 EXCLUDED_PLUGINS = getattr(settings, 'CMS_SEARCH_EXCLUDED_PLUGINS', [])
 
 
-def _render_plugin(plugin, context, renderer=None):
-    if renderer:
-        content = renderer.render_plugin(
-            instance=plugin,
-            context=context,
-            editable=False,
-        )
-    else:
-        content = plugin.render_plugin(context)
-    return content
+def _render_plugin(plugin, context, renderer):
+    return renderer.render_plugin(
+        instance=plugin,
+        context=context,
+        editable=False,
+    )
 
 
 def get_cleaned_bits(data):
@@ -68,11 +66,12 @@ def get_plugin_index_data(base_plugin, request):
         context.dicts[context._processors_index] = updates
 
         try:
-            # django-cms>=3.5
             renderer = request.toolbar.content_renderer
         except AttributeError:
-            # django-cms>=3.4
             renderer = context.get('cms_content_renderer')
+
+        if renderer is None:
+            renderer = ContentRenderer(request=request)
 
         plugin_contents = _render_plugin(instance, context, renderer)
 
