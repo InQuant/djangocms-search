@@ -7,7 +7,6 @@ from cms.models import CMSPlugin, PageContent, Page
 from elasticsearch_dsl import analyzer, analysis
 
 from django_elasticsearch_dsl import Document, fields
-from django_elasticsearch_dsl_drf.compat import StringField
 from django_elasticsearch_dsl.registries import registry
 
 from .conf import settings
@@ -15,6 +14,7 @@ from .helpers import get_plugin_index_data, get_request
 from .utils import clean_join
 
 import logging
+import time
 logger = logging.getLogger('cms_search')
 
 PAGE_DOCUMENT_CLS = None # to be set trough custom_page_document_register
@@ -51,7 +51,7 @@ html_strip = analyzer(
     tokenizer='standard',
     # filter=['lowercase', en_snow, en_stop, de_snow, de_stop, 'german_normalization', de_stemmer],
     # filter=['lowercase', de_decompounder, 'german_normalization', de_stop, en_stop, de_snow, en_snow, de_stemmer, en_stemmer],
-    filter=['lowercase', de_decompounder, 'german_normalization', de_stop, en_stop, de_snow, de_stemmer],
+    filter=['lowercase', de_decompounder, 'german_normalization', de_stop, en_stop, de_stemmer, en_stemmer],
     char_filter=['html_strip']
 )
 class TitleDocumentBase(Document):
@@ -76,7 +76,6 @@ class TitleDocumentBase(Document):
             ignore_signals = True  # see update below
     """
     title = fields.TextField(
-        fielddata=True,
         analyzer=html_strip,
         fields={
             'raw': fields.KeywordField(),
@@ -84,14 +83,13 @@ class TitleDocumentBase(Document):
     )
 
     text = fields.TextField(
-        fielddata=True,
         analyzer=html_strip,
     )
 
-    item_type = StringField(
+    item_type = fields.TextField(
         analyzer=html_strip,
         fields={
-            'raw': StringField(analyzer='keyword'),
+            'raw': fields.KeywordField(),
         }
     )
 
@@ -124,14 +122,12 @@ class TitleDocumentBase(Document):
 class CmsPageDocumentBase(TitleDocumentBase):
 
     description = fields.TextField(
-        fielddata=True,
         analyzer=html_strip,
         fields={
             'raw': fields.KeywordField(),
         }
     )
     slug = fields.TextField(
-        fielddata=True,
         fields={
             'raw': fields.KeywordField(),
         }
@@ -238,12 +234,23 @@ class CmsPageDocumentBase(TitleDocumentBase):
     def get_queryset(self):
         """
         Return the queryset that should be indexed by this doc type.
+        Batch-loads all pages to avoid N+1 queries on parent_page traversal.
         """
-        indexable_pages = []
-        for page in Page.objects.filter(login_required=False):
-            if not page_login_required(page, recursive=True):
-                indexable_pages.append(page.id)
-        return PageContent.objects.filter(page__id__in=indexable_pages)
+        pages = list(Page.objects.only('id', 'login_required', 'parent'))
+        page_map = {p.id: p for p in pages}
+
+        def _is_login_required(page_id):
+            page = page_map.get(page_id)
+            if not page:
+                return False
+            if page.login_required:
+                return True
+            if page.parent_id:
+                return _is_login_required(page.parent_id)
+            return False
+
+        indexable_ids = [p.id for p in pages if not _is_login_required(p.id)]
+        return PageContent.objects.filter(page__id__in=indexable_ids)
 
 
 def page_login_required(page, recursive=False):
@@ -254,13 +261,30 @@ def page_login_required(page, recursive=False):
     return False
 
 
+def _index_op_with_retry(operation, max_retries=2):
+    """Execute an ES index operation with retry and exponential backoff."""
+    for attempt in range(max_retries + 1):
+        try:
+            operation()
+            return
+        except Exception as e:
+            if attempt < max_retries:
+                wait = 2 ** attempt
+                logger.warning(f'ES index operation failed (attempt {attempt + 1}), retrying in {wait}s: {e}')
+                time.sleep(wait)
+            else:
+                raise
+
+
 def update_index_for_page_content(page_document_cls, page_content:PageContent):
     try:
         page = page_content.page
         if page_login_required(page, recursive=True):
             return
         logger.info(f'** update_index_for_page_instance {page} ({page_content})')
-        page_document_cls().update(page_content, refresh=True, action='index')
+        _index_op_with_retry(
+            lambda: page_document_cls().update(page_content, refresh=True, action='index')
+        )
     except Exception as e:
         logger.error(f'** index update failed for page: {page} ({page_content}), {e}')
         logger.error('on_page_post_publish Error - Elasticsearch running?')
@@ -271,7 +295,9 @@ def remove_index_for_page_instance(page_document_cls, page_content:PageContent):
     try:
         page = page_content.page
         logger.info(f'** remove_index_for_page_instance {page}, ({page_content})')
-        page_document_cls().update(page_content, refresh=True, action='delete')
+        _index_op_with_retry(
+            lambda: page_document_cls().update(page_content, refresh=True, action='delete')
+        )
     except Exception as e:
         logger.error(f'** index removal failed for page: {page}, ({page_content})')
         logger.error('on_title_post_unpublish Error - Elasticsearch running?')

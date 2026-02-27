@@ -97,9 +97,9 @@ class TitleDocumentView(BaseDocumentViewSet):
     # Define ordering fields
     ordering_fields = {
         '_score': '_score',
-        'title': 'title',
+        'title': 'title.raw',
         'pub_date': 'pub_date',
     }
 
-    # Specify default ordering
-    ordering = ('-_score', 'pub_date', 'title')
+    # Specify default ordering (_score is descending by default in ES)
+    ordering = ('_score', 'pub_date', 'title.raw')
