@@ -40,7 +40,7 @@ de_stemmer = analysis.token_filter('de_stemmer', type="stemmer", language='Germa
 
 de_decompounder = analysis.token_filter('de_decompounder', type="hyphenation_decompounder",
     word_list_path="analysis/dictionary-de.txt", hyphenation_patterns_path="analysis/de_DR.xml",
-    only_longest_match=True, min_subword_size=3)
+    only_longest_match=True, min_subword_size=5)
 
 # best so far for german seems to be a 3/3 ngram tokenizer with the configured filters.
 # Seems to be the best balance between good matches and to many hits
