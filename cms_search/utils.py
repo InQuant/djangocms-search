@@ -1,13 +1,10 @@
 # -*- coding: utf-8 -*-
-from __future__ import unicode_literals
-
 import importlib
 import re
 
 from django.db import models
 from django.utils.encoding import force_str
 
-import six
 from lxml.etree import ParseError, ParserError
 from lxml_html_clean import Cleaner as LxmlCleaner
 
@@ -73,7 +70,7 @@ def strip_tags(value):
     strip tags. If value isn't valid, just return value since there is
     no tags to strip.
     """
-    if isinstance(value, six.string_types):
+    if isinstance(value, str):
         value = value.strip()
 
         try:
