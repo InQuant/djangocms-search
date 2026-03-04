@@ -78,9 +78,11 @@ def strip_tags(value):
 
         try:
             partial_strip = LxmlCleaner().clean_html(value)
-        except (ParseError, ParserError):
+        except (ParseError, ParserError, ValueError):
             # Error could occur because of invalid html document,
-            # including '' values. We don't want to return empty handed.
+            # including '' values. ValueError raised by lxml when HTML
+            # contains invalid attributes like empty '{}' from Django
+            # template rendering. We don't want to return empty handed.
             partial_strip = value
         value = _strip_tags(partial_strip)
         return value.strip()  # clean cases we have <div>\n\n</div>

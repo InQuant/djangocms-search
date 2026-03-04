@@ -175,8 +175,9 @@ class CmsPageDocumentBase(TitleDocumentBase):
                     plugin_text_content = self.get_plugin_search_text(base_plugin, request)
                     text_tokens.append(plugin_text_content)
                 except Exception as e:
+                    page_url = current_page.get_absolute_url() if current_page else '?'
                     logger.error(
-                        f'Cannot render plugin ({base_plugin}, {base_plugin.id}) for index: {e}')
+                        f'Cannot render plugin ({base_plugin}, type={base_plugin.plugin_type}, page={page_url}) for index: {e}')
                     continue
 
         title = self.prepare_title(pc)
