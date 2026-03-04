@@ -2,11 +2,8 @@
 import importlib
 import re
 
+import nh3
 from django.db import models
-from django.utils.encoding import force_str
-
-from lxml.etree import ParseError, ParserError
-from lxml_html_clean import Cleaner as LxmlCleaner
 
 
 def clean_join(separator, iterable):
@@ -53,46 +50,22 @@ def get_field_value(obj, name):
     return value
 
 
-def clean_text(text):
-    """Remove CSS artifacts, navigation fragments, and normalize whitespace."""
-    # Remove CSS-like blocks: selectors { properties }
-    text = re.sub(r'[.#@][a-zA-Z_][\w-]*\s*\{[^}]*\}', ' ', text)
-    # Remove remaining curly-brace blocks (inline styles etc.)
-    text = re.sub(r'\{[^}]*\}', ' ', text)
-    # Collapse whitespace
-    text = re.sub(r'\s+', ' ', text)
-    return text.strip()
-
-
-def _strip_tags(value):
-    """
-    Returns the given HTML with all tags stripped.
-    This is a copy of django.utils.html.strip_tags, except that it adds some
-    whitespace in between replaced tags to make sure words are not erroneously
-    concatenated.
-    """
-    return re.sub(r'<[^>]*?>', ' ', force_str(value))
+_LINK_RE = re.compile(
+    r'<a\s[^>]*href=["\']([^"\']*)["\'][^>]*>(.*?)</a>',
+    re.IGNORECASE | re.DOTALL,
+)
 
 
 def strip_tags(value):
-    """
-    Returns the given HTML with all tags stripped.
-    We use lxml to strip all js tags and then hand the result to django's
-    strip tags. If value isn't valid, just return value since there is
-    no tags to strip.
-    """
+    """Strip all HTML tags, scripts, and styles from value using nh3.
+    Preserves link URLs as inline text before stripping."""
     if isinstance(value, str):
-        value = value.strip()
-
-        try:
-            partial_strip = LxmlCleaner().clean_html(value)
-        except (ParseError, ParserError, ValueError):
-            # Error could occur because of invalid html document,
-            # including '' values. ValueError raised by lxml when HTML
-            # contains invalid attributes like empty '{}' from Django
-            # template rendering. We don't want to return empty handed.
-            partial_strip = value
-        value = _strip_tags(partial_strip)
-        value = clean_text(value)
-        return value.strip()  # clean cases we have <div>\n\n</div>
+        from html import unescape
+        # Convert <a href="url">text</a> → text (url) before stripping
+        value = _LINK_RE.sub(r'\2 (\1)', value)
+        text = nh3.clean(value, tags=set())
+        # Decode HTML entities (e.g. &amp; → &) so URLs stay clean
+        text = unescape(text)
+        text = re.sub(r'\s+', ' ', text)
+        return text.strip()
     return value
