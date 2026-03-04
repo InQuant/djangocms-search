@@ -53,6 +53,19 @@ def get_field_value(obj, name):
     return value
 
 
+def clean_text(text):
+    """Remove CSS artifacts, navigation fragments, and normalize whitespace."""
+    # Remove CSS-like blocks: selectors { properties }
+    text = re.sub(r'[.#@][a-zA-Z_][\w-]*\s*\{[^}]*\}', ' ', text)
+    # Remove remaining curly-brace blocks (inline styles etc.)
+    text = re.sub(r'\{[^}]*\}', ' ', text)
+    # Remove CSS-like tokens (.class-name, #id, @media)
+    text = re.sub(r'[.#@][\w-]{2,}', ' ', text)
+    # Collapse whitespace
+    text = re.sub(r'\s+', ' ', text)
+    return text.strip()
+
+
 def _strip_tags(value):
     """
     Returns the given HTML with all tags stripped.
@@ -82,5 +95,6 @@ def strip_tags(value):
             # template rendering. We don't want to return empty handed.
             partial_strip = value
         value = _strip_tags(partial_strip)
+        value = clean_text(value)
         return value.strip()  # clean cases we have <div>\n\n</div>
     return value
