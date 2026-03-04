@@ -59,8 +59,6 @@ def clean_text(text):
     text = re.sub(r'[.#@][a-zA-Z_][\w-]*\s*\{[^}]*\}', ' ', text)
     # Remove remaining curly-brace blocks (inline styles etc.)
     text = re.sub(r'\{[^}]*\}', ' ', text)
-    # Remove CSS-like tokens (.class-name, #id, @media)
-    text = re.sub(r'[.#@][\w-]{2,}', ' ', text)
     # Collapse whitespace
     text = re.sub(r'\s+', ' ', text)
     return text.strip()
